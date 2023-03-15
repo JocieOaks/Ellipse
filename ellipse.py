@@ -3,9 +3,11 @@ Module for calculating the elliptical projection of a circle onto the viewing pl
 
 Can be run as a script to take a quaternion and a diameter to get the angle and minor axis of a circle with the given diameter being rotated by the given quaternion.
 
+new_quaternion - Create a new unit quaternion with the given axis and angle.
 hamilton - Calculate the Hamilton product of two quaternions.
 conjugate - Calculate the conjugate of a quaternion.
-rotation - Rotate one quaternion by a unit quaternion.
+rotation - Rotate a vector by a unit quaternion.
+axis_rotation - Perform two rotations, where the second axis of rotation is also being rotated.
 elliptical_projection - Find the elliptical projection of a rotated circle.
 normalize - Normalize a quaternion.
 parse_arguments - Parse arguments when run as a script.
@@ -27,11 +29,31 @@ K = 3
 #The square root of 2 divided by 2, which is the length of the legs of a right triangle with a hypotnuse of legnth 1. 
 RAD2_2 = 0.7071067812
 
+def new_quaternion(vector, theta):
+    """
+    Create a new unit quaternion with the given axis and angle.
+
+    Keyword Arguments:
+        vector (float[3]) -- a vector pointing along the axis of rotation.
+        theta (float) -- the angle of rotation around the axis in radians.
+    Returns:
+        float[4] -- a unit quaternion with the given rotation.
+    """
+    r_2 = vector[0] ** 2 + vector[1] ** 2 + vector[2] ** 2
+    if(not m.isclose(r_2,1)):
+        r = m.sqrt(r_2)
+        vector = [vector[i] / r for i in range(0,3)]
+
+    sin = m.sin(theta)
+    cos = m.cos(theta)
+
+    return [cos, sin * vector[0], sin * vector[1], sin * vector[2]]
+
 def hamilton(quaternion1, quaternion2):
     """
     Calculate the Hamilton product of two quaternions.
 
-    Note that the Hamilton product is not commutative. 
+    Note that the Hamilton product is not commutative.
     Keyword Arguments:
         quaternion1 (float[4]) -- the first quaternion.
         quaternion2 (float[4]) -- the second quaternion.
@@ -56,17 +78,38 @@ def conjugate(quaternion):
     """
     return [quaternion[A], -quaternion[I], -quaternion[J], -quaternion[K]]
 
-def rotation(quaternion1, quaternion2):
+def rotation(quaternion, vector):
     """
-    Calculate a quaternion rotated around a unit quaternion.
+    Rotate a vector by a unit quaternion.
 
     Keyword Arguments:
-        quaternion1 -- The unit quaternion about which quaternion2 is being rotated.
-        quaternion2 -- The quaternion being rotated.
+        quaternion (float[4]) -- the unit quaternion about which vector is being rotated.
+        vector (float[3]) -- the vector being rotated.
     Returns:
-        float[4] -- quaternion2 rotated around quaternion1      aka     quaternion2' = quaternion1 * quaternion2 * quaternion1*
+        float[3] -- vector after being rotated by quaternion.
     """
-    return hamilton(hamilton(quaternion1,quaternion2),conjugate(quaternion1))
+    rotated_vector = hamilton(hamilton(quaternion, [0, vector[0], vector[1], vector[2]]), conjugate(quaternion))
+    #hamilton product always returns a quaternion, but the scaler part will be zero, so it is simply a vector.
+    return [rotated_vector[i] for i in range(1,4)]
+
+def axis_rotation(quaternion1, axis, theta):
+    """
+    Caclculate the unit quaternion representing two rotations, where the axis of rotation is also being rotated.
+
+    This is useful for cases such as a gyroscope, where two rings are rotating inside one another, but as the first ring rotates, the axis of the second ring is also rotated.
+    Keyword Arguments:
+        quaternion (float[4]) -- the unit quaternion representing the initial rotation.
+        axis (float[3]) -- the axis of the second rotation.
+        theta (float) -- the angle of rotation in radians for the second rotation.
+    Returns:
+        float[4] -- the quaternion that combines both rotations.
+    """
+    new_axis = rotation(quaternion1, axis)
+    quaternion2 = new_quaternion(new_axis, theta)
+
+    #successive rotation by two quaternions is equal to rotation by the hamilton product of both quaternions.
+    return hamilton(quaternion2, quaternion1)
+
 
 def elliptical_projection(quaternion):
     """
@@ -82,19 +125,19 @@ def elliptical_projection(quaternion):
     and then perform a rotation on the ellipse to get it at the correct angle.
     """
     # find one of the two foci of the ellipse then use that to solve the angle and minor axis length
-    focus = rotation(quaternion, [0,0,0,1])
+    focus = rotation(quaternion, [0,0,1])
     
-    if (m.isclose(focus[2], 0, abs_tol = 0.00001)):
+    if (m.isclose(focus[1], 0, abs_tol = 0.00001)):
         theta = 0
-    elif(m.isclose(focus[1],0, abs_tol = 0.00001)):
+    elif(m.isclose(focus[0],0, abs_tol = 0.00001)):
         theta = m.pi /2
     else:
-        theta = m.atan(focus[2]/ focus[1])
+        theta = m.atan(focus[1]/ focus[0])
 
-    if (m.isclose(focus[1] ** 2 + focus[2] ** 2, 1)):
+    if (m.isclose(focus[0] ** 2 + focus[1] ** 2, 1)):
        minor = 0
     else:
-        minor = m.sqrt(1 - focus[1] ** 2 - focus[2] ** 2)
+        minor = m.sqrt(1 - focus[0] ** 2 - focus[1] ** 2)
 
     return (theta, minor)
 
